@@ -1,12 +1,14 @@
 [package]
 name = "poisson-rate-test"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["Josh Vander Hook <josh@vanderhook.info>"]
 description = "Tests the equivalence of Poisson process rates, per Gu 2008 'Testing Ratio of Two Poisson Rates' "
 edition = "2018"
 readme= "README.md"
 license-file = "LICENSE"
 homepage = "https://github.com/jodavaho/poisson-rate-test"
+keywords = ["probability","statistics","Poisson","hypothesis"]
+categories = ["probability","statistics"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
