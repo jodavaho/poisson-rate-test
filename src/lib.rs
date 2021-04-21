@@ -3,7 +3,7 @@ use statrs::distribution::Poisson;
 use statrs::function::gamma::{gamma_li, gamma};
 
 pub fn version()->String{
-    "0.1.0"
+    "0.1.0".to_string()
 }
 pub fn poisson_lhr_test(
     sum_metric_group:f64,
