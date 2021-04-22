@@ -4,7 +4,7 @@ The intended use of this single-function library is to test whether two events a
 
 I use it in [kda-tools](https://github.com/jodavaho/kda-tools) for hypothesis testing loadouts in video games.
 
-Here's a few examples, see more in [the docs](https://docs.rs/poisson-rate-test/1.0.1/poisson_rate_test/fn.poisson_lhr_test.html)
+Here's a few examples, see more in [the docs](https://docs.rs/poisson-rate-test/)
 
 ```rust
 use claim::{assert_lt,assert_gt};
