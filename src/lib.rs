@@ -11,7 +11,7 @@ use statrs::function::gamma::{gamma_li, gamma};
 ///
 /// Return the version string for the current version of the library
 pub fn version()->String{
-    "1.0.2".to_string()
+    "1.0.3".to_string()
 }
 
 ///Returns the p-value of the two-tailed hypothesis test r1/r2 != 1.0 Or, tests
