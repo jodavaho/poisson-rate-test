@@ -47,5 +47,5 @@ let t2n2 = trial2_two.len() as f64;
 let t2sum1 = trial2_one.iter().sum::<usize>() as f64;
 let t2sum2 = trial2_two.iter().sum::<usize>() as f64;
 p_double = two_tailed_rates_equal(t2sum2, t2n2, t2sum1, t2n1);
-assert_lt!(p_double,0.05);//<--That did the truck
+assert_lt!(p_double,0.05);//<--That did the trick
 ```
