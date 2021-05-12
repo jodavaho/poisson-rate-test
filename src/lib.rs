@@ -1,10 +1,68 @@
-use statrs::distribution::Discrete;
+
+use rand::distributions::Distribution;
+use rand::distributions::DistIter;
 use statrs::distribution::Poisson;
+use statrs::distribution::Univariate;
+use statrs::distribution::Discrete;
 use statrs::function::gamma::{gamma_li, gamma};
 
 /// Return the version string for the current version of the library
 pub fn version()->String{
     "1.0.3".to_string()
+}
+
+mod bootstrap{
+
+    mod param{
+        use statrs::distribution::Poisson;
+
+/// Compare R1/R2 under condition 1 vs R1/R2 without constraint
+        /// where R1 = #events of type 1 / #trials
+        /// and   R2 = #events of type 2 / #trials 
+        /// 
+        /// We assume two populations, one of which had some difference, and we're
+        /// trying to see if it affected the ratio of the occurances of these two
+        /// events.
+        /// 
+        /// That is, we test the hypotehsis that R1/R2 under treatment is the same as R1/R2 without treatment.
+        /// 
+        /// As suggested, we're using boostrap methods (computationally more expensive, but not bad)
+        pub fn ratio_events_equal_pval(
+            num_events_one_treatment:usize,
+            num_events_two_treatment:usize,
+            num_treatment_group:usize,
+            num_events_one_baseline:usize,
+            num_events_two_baseline:usize,
+            num_baseline_group:usize
+        ) -> Result<f64, &'static str>
+        {
+            if num_events_one_baseline == 0 {
+                return Err("Event one does not occur in baseline, assumption of poisson distribution is violated");
+            }
+            if num_events_two_baseline == 0 {
+                return Err("Event two does not occur in baseline, assumption of poisson distribution is violated");
+            }
+            //TODO: Make parallel with iter_tools & Rayon
+            let t_stat:f64 = num_events_one_treatment as f64 /num_events_two_treatment as f64  - num_events_one_baseline as f64 /num_events_two_baseline as f64 ;
+            //we're going to try to handle infinities ... 
+            let num_samples = 1000;
+            //generate baseline distribution of size num_baseline_group + num_treatment_group
+            //seperate and calculate # events 1 and 2 for both populations
+            //
+            let rate_one_baseline:f64 = num_events_one_baseline as f64 / num_baseline_group as f64;
+            let rate_two_baseline:f64 = num_events_two_baseline  as f64/ num_baseline_group as f64;
+            let p_one = Poisson::new(rate_one_baseline).unwrap();
+            let p_two = Poisson::new(rate_two_baseline).unwrap();
+
+            //TODO parallelize
+            let mut rng = rand::thread_rng();
+            let t = p_one.sample(&mut rng);
+            //let s_k:Vec<f64> = p_one.sample(rand::Rng).take(num_treatment_group).collect();
+
+            Ok(0.0)
+        }
+    }
+
 }
 
 ///Returns the p-value of the two-tailed hypothesis test r1/r2 != 1.0 Or, tests
@@ -122,6 +180,40 @@ pub fn one_tailed_ratio(
         p_val
     }
 
+    #[deprecated]
+    #[allow(dead_code)]
+    /**
+     * **Deprecated**
+     * 
+     * This method, for R1 = X1/T1 and R2 = X2/T2, checks p(X>X1 | T1=t1,
+     * X2=x2, T2=t2). It does not check p(R1>R2), which is what I thought it
+     * did.  The problem is the use of the assumption that T1 is known. 
+     * 
+     * It's kept here for completeness, but never use it.
+     */
+fn one_tailed_n(
+    num_events_one:f64,
+    t_one:f64,
+    num_events_two:f64,
+    t_two:f64,
+    h0_rate_ratio:f64) -> f64
+    {
+
+        assert!(num_events_one>0.0 || num_events_two>0.0,"We cannot test without some events occurring (parameter 1 and 3 were 0)");
+        let mut p_val = 0.0;
+
+        let obs_rate_one = num_events_one  / t_one ;
+        let obs_rate_two = num_events_two   / t_two ;
+        if obs_rate_one == 0.0
+        {
+            //specific case of probability 0 | non-group rate and only t_one trials
+            p_val = Poisson::new( h0_rate_ratio * obs_rate_two * t_one ).unwrap().pmf(0);
+        } else if t_one>0.0 && t_two > 0.0{
+
+            p_val = 1.0-Poisson::new(h0_rate_ratio * obs_rate_two * t_one).unwrap().cdf(num_events_one);
+        }
+        p_val
+    }
 
 #[cfg(test)]
 mod tests{
@@ -239,5 +331,12 @@ use claim::{assert_lt,assert_gt};
         p_double = two_tailed_rates_equal(t2sum2, t2n2, t2sum1, t2n1);
         assert_lt!(p_double,0.05);//<--That did the truck
 
+    }
+
+    #[test]
+    fn test_ones_side_compare(){
+        let p = one_tailed_ratio(1.0,1.0,1.0,1.0,1.0);
+        //one sided test!
+        assert_eq!(p,0.5);
     }
 }
