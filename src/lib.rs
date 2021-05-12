@@ -4,7 +4,7 @@ use statrs::function::gamma::{gamma_li, gamma};
 
 /// Return the version string for the current version of the library
 pub fn version()->String{
-    "1.0.3".to_string()
+    return env!("CARGO_PKG_VERSION").to_string();
 }
 
 pub mod bootstrap{
@@ -26,13 +26,61 @@ pub mod bootstrap{
         /// That is, we test the hypotehsis that R1/R2 under treatment is the same as R1/R2 without treatment.
         /// 
         /// As suggested, we're using boostrap methods (computationally more expensive, but not bad)
+        /// 
+        /// *Example*
+        /// ```rust
+        /// use claim::{assert_lt,assert_gt};
+        /// let base_a = vec![1,1,1,1, 1,1,2,1];
+        /// let base_b = vec![1,0,1,1, 0,1,1,1];
+        /// let treat_a = vec![1,1,1,1, 1,1,2,1];
+        /// let treat_b = vec![1,0,0,0, 0,0,0,0];
+        /// //Did treatment increase ratio of a/b?
+        /// let p = poisson_rate_test::bootstrap::param::ratio_events_equal_pval(
+        ///     base_a.iter().sum::<usize>(),
+        ///     base_b.iter().sum::<usize>(),
+        ///     base_a.len() as usize,
+        ///     treat_a.iter().sum::<usize>(),
+        ///     treat_b.iter().sum::<usize>(),
+        ///     treat_a.len() as usize,
+        /// );
+        /// assert_lt!(p.unwrap(),0.05); //<--confidently yes
+        /// assert_gt!(p.unwrap(),0.001);
+        /// ```
         pub fn ratio_events_equal_pval(
             num_events_one_baseline:usize,
             num_events_two_baseline:usize,
             num_baseline_group:usize,
             num_events_one_treatment:usize,
             num_events_two_treatment:usize,
-            num_treatment_group:usize
+            num_treatment_group:usize,
+        ) -> Result<f64, &'static str>
+        {
+            return  ratio_events_equal_pval_n(num_events_one_baseline,
+            num_events_two_baseline, num_baseline_group,
+            num_events_one_treatment, num_events_two_treatment,
+            num_treatment_group, 1000);
+        }
+
+        /// Compare R1/R2 under condition 1 vs R1/R2 without constraint, and
+        /// return the confidence interval
+        /// where R1 = #events of type 1 / #trials
+        /// and   R2 = #events of type 2 / #trials 
+        /// 
+        /// We assume two populations, one of which had some difference, and we're
+        /// trying to see if it affected the ratio of the occurances of these two
+        /// events.
+        /// 
+        /// That is, we test the hypotehsis that R1/R2 under treatment is the same as R1/R2 without treatment.
+        /// 
+        /// As suggested, we're using boostrap methods (computationally more expensive, but not bad)
+        pub fn ratio_events_equal_pval_n(
+            num_events_one_baseline:usize,
+            num_events_two_baseline:usize,
+            num_baseline_group:usize,
+            num_events_one_treatment:usize,
+            num_events_two_treatment:usize,
+            num_treatment_group:usize,
+            num_samples:usize,
         ) -> Result<f64, &'static str>
         {
             if num_events_one_baseline == 0 {
@@ -44,7 +92,6 @@ pub mod bootstrap{
             //TODO: Make parallel with iter_tools & Rayon
             let t_stat:f64 = num_events_one_treatment as f64 /num_events_two_treatment as f64  - num_events_one_baseline as f64 /num_events_two_baseline as f64 ;
             //we're going to try to handle infinities ... 
-            let num_samples = 1000;
             //generate baseline distribution of size num_baseline_group + num_treatment_group
             //seperate and calculate # events 1 and 2 for both populations
             //
@@ -303,6 +350,42 @@ use claim::{assert_lt,assert_gt};
         );
         assert_lt!(p.unwrap(),0.05); //<--confidently yes
         assert_gt!(p.unwrap(),0.01);
+
+    }
+
+    #[test]
+    fn test_denom_decrease_boostrap_parametric(){
+        let base_a = vec![1,1,1,1];
+        let base_b = vec![1,0,1,1];
+        let treat_a = vec![1,1,1,1];
+        let treat_b = vec![1,0,0,0];
+        //Did treatment increase ratio of a/b?
+        let p = bootstrap::param::ratio_events_equal_pval(
+            base_a.iter().sum::<usize>(),
+            base_b.iter().sum::<usize>(),
+            base_a.len() as usize,
+            treat_a.iter().sum::<usize>(),
+            treat_b.iter().sum::<usize>(),
+            treat_a.len() as usize,
+        );
+        assert_lt!(p.unwrap(),0.15); //<--tentatively yes
+        assert_gt!(p.unwrap(),0.05);
+
+        let base_a = vec![1,1,1,1, 1,1,2,1];
+        let base_b = vec![1,0,1,1, 0,1,1,1];
+        let treat_a = vec![1,1,1,1, 1,1,2,1];
+        let treat_b = vec![1,0,0,0, 0,0,0,0];
+        //Did treatment increase ratio of a/b?
+        let p = bootstrap::param::ratio_events_equal_pval(
+            base_a.iter().sum::<usize>(),
+            base_b.iter().sum::<usize>(),
+            base_a.len() as usize,
+            treat_a.iter().sum::<usize>(),
+            treat_b.iter().sum::<usize>(),
+            treat_a.len() as usize,
+        );
+        assert_lt!(p.unwrap(),0.05); //<--confidently yes
+        assert_gt!(p.unwrap(),0.001);
 
         //gather more data
     }
