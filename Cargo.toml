@@ -1,7 +1,7 @@
 [package]
 
 name = "poisson-rate-test"
-version = "1.0.4"
+version = "1.0.5"
 authors = ["Josh Vander Hook <josh@vanderhook.info>"]
 description = "Tests the equivalence of Poisson process rates, per Gu 2008 'Testing Ratio of Two Poisson Rates' "
 edition = "2018"
@@ -16,6 +16,6 @@ categories = ["science"]
 [dependencies]
 
 statrs="0.13.0"
-claim="0.5.0"
 rand="0.8.3"
 rand_distr="0.4.0"
+claim = "*"

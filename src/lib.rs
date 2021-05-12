@@ -1,9 +1,5 @@
-
-use rand::distributions::Distribution;
-use rand::distributions::DistIter;
-use statrs::distribution::Poisson;
-use statrs::distribution::Univariate;
-use statrs::distribution::Discrete;
+use statrs::distribution::{Discrete as _, Poisson as statrs_Poisson};
+use statrs::distribution::Univariate as _;
 use statrs::function::gamma::{gamma_li, gamma};
 
 /// Return the version string for the current version of the library
@@ -11,12 +7,15 @@ pub fn version()->String{
     "1.0.3".to_string()
 }
 
-mod bootstrap{
+pub mod bootstrap{
 
-    mod param{
-        use statrs::distribution::Poisson;
+    pub mod param{
 
-/// Compare R1/R2 under condition 1 vs R1/R2 without constraint
+        use rand_distr::Poisson as rand_Poisson;
+        use rand_distr::Distribution;
+
+        /// Compare R1/R2 under condition 1 vs R1/R2 without constraint, and
+        /// return the confidence interval
         /// where R1 = #events of type 1 / #trials
         /// and   R2 = #events of type 2 / #trials 
         /// 
@@ -28,12 +27,12 @@ mod bootstrap{
         /// 
         /// As suggested, we're using boostrap methods (computationally more expensive, but not bad)
         pub fn ratio_events_equal_pval(
-            num_events_one_treatment:usize,
-            num_events_two_treatment:usize,
-            num_treatment_group:usize,
             num_events_one_baseline:usize,
             num_events_two_baseline:usize,
-            num_baseline_group:usize
+            num_baseline_group:usize,
+            num_events_one_treatment:usize,
+            num_events_two_treatment:usize,
+            num_treatment_group:usize
         ) -> Result<f64, &'static str>
         {
             if num_events_one_baseline == 0 {
@@ -51,15 +50,21 @@ mod bootstrap{
             //
             let rate_one_baseline:f64 = num_events_one_baseline as f64 / num_baseline_group as f64;
             let rate_two_baseline:f64 = num_events_two_baseline  as f64/ num_baseline_group as f64;
-            let p_one = Poisson::new(rate_one_baseline).unwrap();
-            let p_two = Poisson::new(rate_two_baseline).unwrap();
+            let p_one = rand_Poisson::new(rate_one_baseline).unwrap();
+            let p_two = rand_Poisson::new(rate_two_baseline).unwrap();
 
-            //TODO parallelize
-            let mut rng = rand::thread_rng();
-            let t = p_one.sample(&mut rng);
-            //let s_k:Vec<f64> = p_one.sample(rand::Rng).take(num_treatment_group).collect();
-
-            Ok(0.0)
+            let mut p_val = 0.0;
+            for _ in 0..num_samples{
+                let occ_b_one:f64 = p_one.sample_iter(&mut rand::thread_rng()).take(num_baseline_group).sum();
+                let occ_b_two:f64 = p_two.sample_iter(&mut rand::thread_rng()).take(num_baseline_group).sum();
+                let occ_t_one:f64 = p_one.sample_iter(&mut rand::thread_rng()).take(num_treatment_group).sum();
+                let occ_t_two:f64 = p_two.sample_iter(&mut rand::thread_rng()).take(num_treatment_group).sum();
+                let ti = occ_t_one / occ_t_two - occ_b_one/occ_b_two;
+                if ti>t_stat{
+                    p_val += 1.0/num_samples as f64;
+                }
+            }
+            Ok(p_val)
         }
     }
 
@@ -157,16 +162,16 @@ pub fn one_tailed_ratio(
         if obs_rate_one == 0.0
         {
             //specific case of probability 0 | non-group rate and only t_one trials
-            p_val = Poisson::new(obs_rate_two * t_one ).unwrap().pmf(0);
+            p_val = statrs_Poisson::new(obs_rate_two * t_one ).unwrap().pmf(0);
         } else if t_one>0.0 && t_two > 0.0{
 
             //OK so if you follow through magic_g, under the case R=1, t0 == t1, it all cancels out nicely. 
             let maximum_likelihood_h0:f64 = 
-                Poisson::new(hypothesized_rate_one * t_one  ).unwrap().pmf(num_events_one as u64)
-                * Poisson::new(hypothesized_rate_two * t_two ).unwrap().pmf(num_events_two as u64);
+                statrs_Poisson::new(hypothesized_rate_one * t_one  ).unwrap().pmf(num_events_one as u64)
+                * statrs_Poisson::new(hypothesized_rate_two * t_two ).unwrap().pmf(num_events_two as u64);
             let maximum_likelihood_unconstrained:f64 = 
-                Poisson::new(obs_rate_one * t_one ).unwrap().pmf(num_events_one as u64)
-                * Poisson::new(obs_rate_two * t_two ).unwrap().pmf(num_events_two as u64);
+                statrs_Poisson::new(obs_rate_one * t_one ).unwrap().pmf(num_events_one as u64)
+                * statrs_Poisson::new(obs_rate_two * t_two ).unwrap().pmf(num_events_two as u64);
             let lhr =  maximum_likelihood_h0 / maximum_likelihood_unconstrained;
             if lhr == 1.0{
                 p_val = 0.5;//chi-square-cdf(x-->0) --> 0
@@ -207,10 +212,10 @@ fn one_tailed_n(
         if obs_rate_one == 0.0
         {
             //specific case of probability 0 | non-group rate and only t_one trials
-            p_val = Poisson::new( h0_rate_ratio * obs_rate_two * t_one ).unwrap().pmf(0);
+            p_val = statrs_Poisson::new( h0_rate_ratio * obs_rate_two * t_one ).unwrap().pmf(0);
         } else if t_one>0.0 && t_two > 0.0{
 
-            p_val = 1.0-Poisson::new(h0_rate_ratio * obs_rate_two * t_one).unwrap().cdf(num_events_one);
+            p_val = 1.0-statrs_Poisson::new(h0_rate_ratio * obs_rate_two * t_one).unwrap().cdf(num_events_one);
         }
         p_val
     }
@@ -266,6 +271,43 @@ use claim::{assert_lt,assert_gt};
     }
 
     #[test]
+    fn test_two_diff_bootstrap_parametric(){
+        let base_a = vec![0,0,1,0];
+        let base_b = vec![1,0,1,1];
+        let treat_a = vec![1,1,1,2];
+        let treat_b = vec![1,1,1,1];
+        //Did treatment increase ratio of a/b?
+        let p = bootstrap::param::ratio_events_equal_pval(
+            base_a.iter().sum::<usize>(),
+            base_b.iter().sum::<usize>(),
+            base_a.len() as usize,
+            treat_a.iter().sum::<usize>(),
+            treat_b.iter().sum::<usize>(),
+            treat_a.len() as usize,
+        );
+        assert_lt!(p.unwrap(),0.15); //<--tentatively yes
+        assert_gt!(p.unwrap(),0.05);
+
+        let base_a = vec![0,0,1,0, 1,0,0,0];
+        let base_b = vec![1,0,1,1, 0,1,1,1];
+        let treat_a = vec![1,1,1,2, 1,2,1,1];
+        let treat_b = vec![1,1,1,1, 1,1,1,1];
+        //Did treatment increase ratio of a/b?
+        let p = bootstrap::param::ratio_events_equal_pval(
+            base_a.iter().sum::<usize>(),
+            base_b.iter().sum::<usize>(),
+            base_a.len() as usize,
+            treat_a.iter().sum::<usize>(),
+            treat_b.iter().sum::<usize>(),
+            treat_a.len() as usize,
+        );
+        assert_lt!(p.unwrap(),0.05); //<--confidently yes
+        assert_gt!(p.unwrap(),0.01);
+
+        //gather more data
+    }
+
+    #[test]
     fn test_two_same(){
         let occurances_observed = vec![1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1];
         let occurances_other = vec![1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1];
@@ -290,6 +332,7 @@ use claim::{assert_lt,assert_gt};
         let p = two_tailed_rates_equal(sum1, n1, expected_sum, expected_n);
         assert!(p>0.99); //<--confidently yes
     }
+
     #[test]
     fn test_readme_example(){
          //create data where rate1 == 1/2 * rate2
