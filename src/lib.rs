@@ -15,18 +15,22 @@ pub mod bootstrap{
         use rand_distr::Distribution;
         use rayon::prelude::{ IntoParallelIterator, ParallelIterator};
 
-        /// Compare R1/R2 under condition 1 vs R1/R2 without constraint, and
-        /// return the confidence interval
-        /// where R1 = #events of type 1 / #trials
-        /// and   R2 = #events of type 2 / #trials 
+        /// Hypothesis test R1/R2 under condition 1 > R1/R2 without constraint 
+        /// and return the p-value.  where R1 = #events of type 1 / #trials and
+        /// R2 = #events of type 2 / #trials 
         /// 
-        /// We assume two populations, one of which had some difference, and we're
-        /// trying to see if it affected the ratio of the occurances of these two
-        /// events.
+        /// We assume two populations, one of which had some difference, and
+        /// we're trying to see if it affected the ratio of the occurances of
+        /// these two events.
         /// 
-        /// That is, we test the hypotehsis that R1/R2 under treatment is the same as R1/R2 without treatment.
+        /// We're using boostrap methods (computationally more expensive, but
+        /// not bad)
         /// 
-        /// As suggested, we're using boostrap methods (computationally more expensive, but not bad)
+        /// One caveat: If # events_1 and # events_2 under treatment are both 0
+        /// (neither events occurred under treatment), that is considered a
+        /// viable event and is compared to the occurances of 0/0 in baseline
+        /// samples.
+        /// 
         /// 
         /// *Example*
         /// ```rust
@@ -36,7 +40,7 @@ pub mod bootstrap{
         /// let treat_a = vec![1,1,1,1, 1,1,2,1];
         /// let treat_b = vec![1,0,0,0, 0,0,0,0];
         /// //Did treatment increase ratio of a/b?
-        /// let p = poisson_rate_test::bootstrap::param::ratio_events_equal_pval(
+        /// let p = poisson_rate_test::bootstrap::param::ratio_events_greater_pval(
         ///     base_a.iter().sum::<usize>(),
         ///     base_b.iter().sum::<usize>(),
         ///     base_a.len() as usize,
@@ -47,7 +51,7 @@ pub mod bootstrap{
         /// assert_lt!(p.unwrap(),0.05); //<--confidently yes
         /// assert_gt!(p.unwrap(),0.001);
         /// ```
-        pub fn ratio_events_equal_pval(
+        pub fn ratio_events_greater_pval(
             num_events_one_baseline:usize,
             num_events_two_baseline:usize,
             num_baseline_group:usize,
@@ -56,25 +60,28 @@ pub mod bootstrap{
             num_treatment_group:usize,
         ) -> Result<f64, &'static str>
         {
-            return  ratio_events_equal_pval_n(num_events_one_baseline,
+            return  ratio_events_greater_pval_n(num_events_one_baseline,
             num_events_two_baseline, num_baseline_group,
             num_events_one_treatment, num_events_two_treatment,
             num_treatment_group, 1000);
         }
 
-        /// Compare R1/R2 under condition 1 vs R1/R2 without constraint, and
-        /// return the confidence interval
-        /// where R1 = #events of type 1 / #trials
-        /// and   R2 = #events of type 2 / #trials 
+        /// Hypothesis test R1/R2 under condition 1 > R1/R2 without constraint 
+        /// and return the p-value.  where R1 = #events of type 1 / #trials and
+        /// R2 = #events of type 2 / #trials 
         /// 
-        /// We assume two populations, one of which had some difference, and we're
-        /// trying to see if it affected the ratio of the occurances of these two
-        /// events.
+        /// We assume two populations, one of which had some difference, and
+        /// we're trying to see if it affected the ratio of the occurances of
+        /// these two events.
         /// 
-        /// That is, we test the hypotehsis that R1/R2 under treatment is the same as R1/R2 without treatment.
+        /// We're using boostrap methods (computationally more expensive, but
+        /// not bad)
         /// 
-        /// As suggested, we're using boostrap methods (computationally more expensive, but not bad)
-        pub fn ratio_events_equal_pval_n(
+        /// One caveat: If # events_1 and # events_2 under treatment are both 0
+        /// (neither events occurred under treatment), that is considered a
+        /// viable event and is compared to the occurances of 0/0 in baseline
+        /// samples.
+        pub fn ratio_events_greater_pval_n(
             num_events_one_baseline:usize,
             num_events_two_baseline:usize,
             num_baseline_group:usize,
@@ -84,13 +91,22 @@ pub mod bootstrap{
             num_samples:usize,
         ) -> Result<f64, &'static str>
         {
+            if num_events_one_treatment == 0 && num_events_two_treatment == 0 {
+                return Err("Err creating test statistic: Treatment event ratio 0/0 is uncomparable")
+            }
             if num_events_one_baseline == 0 {
                 return Err("Event one does not occur in baseline, assumption of poisson distribution is violated");
             }
             if num_events_two_baseline == 0 {
                 return Err("Event two does not occur in baseline, assumption of poisson distribution is violated");
             }
-            let t_stat:f64 = num_events_one_treatment as f64 /num_events_two_treatment as f64  - num_events_one_baseline as f64 /num_events_two_baseline as f64 ;
+            let t_stat:f64 = match (num_events_one_treatment,num_events_two_treatment)
+            {
+             // (0,0)=> num_events_one_treatment as f64 /num_events_two_treatment as f64  
+             //       - num_events_one_baseline as f64  /num_events_two_baseline  as f64,
+                (_,_)=> num_events_one_treatment as f64 /num_events_two_treatment as f64  
+                      - num_events_one_baseline as f64  /num_events_two_baseline  as f64,
+            };
             //we're going to try to handle infinities ... 
             //generate baseline distribution of size num_baseline_group + num_treatment_group
             //seperate and calculate # events 1 and 2 for both populations
@@ -108,7 +124,7 @@ pub mod bootstrap{
                 let ti = occ_t_one / occ_t_two - occ_b_one/occ_b_two;
                 if occ_t_two == 0.0 {
                     return 1.0/(num_samples as f64)
-                } else if ti>t_stat{
+                }else if ti>t_stat{
                     return 1.0/(num_samples as f64)
                 } 0.0
             }
@@ -326,7 +342,7 @@ use claim::{assert_lt,assert_gt};
         let treat_a = vec![1,1,1,2];
         let treat_b = vec![1,1,1,1];
         //Did treatment increase ratio of a/b?
-        let p = bootstrap::param::ratio_events_equal_pval_n(
+        let p = bootstrap::param::ratio_events_greater_pval_n(
             base_a.iter().sum::<usize>(),
             base_b.iter().sum::<usize>(),
             base_a.len() as usize,
@@ -343,7 +359,7 @@ use claim::{assert_lt,assert_gt};
         let treat_a = vec![1,1,1,2, 1,2,1,1];
         let treat_b = vec![1,1,1,1, 1,1,1,1];
         //Did treatment increase ratio of a/b?
-        let p = bootstrap::param::ratio_events_equal_pval_n(
+        let p = bootstrap::param::ratio_events_greater_pval_n(
             base_a.iter().sum::<usize>(),
             base_b.iter().sum::<usize>(),
             base_a.len() as usize,
@@ -364,7 +380,7 @@ use claim::{assert_lt,assert_gt};
         let treat_a = vec![1,1,1,1];
         let treat_b = vec![1,0,0,0];
         //Did treatment increase ratio of a/b?
-        let p = bootstrap::param::ratio_events_equal_pval(
+        let p = bootstrap::param::ratio_events_greater_pval(
             base_a.iter().sum::<usize>(),
             base_b.iter().sum::<usize>(),
             base_a.len() as usize,
@@ -380,7 +396,7 @@ use claim::{assert_lt,assert_gt};
         let treat_a = vec![1,1,1,1, 1,1,2,1];
         let treat_b = vec![1,0,0,0, 0,0,0,0];
         //Did treatment increase ratio of a/b?
-        let p = bootstrap::param::ratio_events_equal_pval(
+        let p = bootstrap::param::ratio_events_greater_pval(
             base_a.iter().sum::<usize>(),
             base_b.iter().sum::<usize>(),
             base_a.len() as usize,
@@ -473,14 +489,14 @@ use claim::{assert_lt,assert_gt};
     #[test]
     fn test_p_indep_of_magnitude(){
         use statrs::assert_almost_eq;
-        let p_one = bootstrap::param::ratio_events_equal_pval_n(
+        let p_one = bootstrap::param::ratio_events_greater_pval_n(
             200,200,
             100,
             10,1,
             1,
             5000
         );  
-        let p_ten = bootstrap::param::ratio_events_equal_pval_n(
+        let p_ten = bootstrap::param::ratio_events_greater_pval_n(
             200,200,
             100,
             10000,1000,
@@ -492,7 +508,7 @@ use claim::{assert_lt,assert_gt};
 
     #[test]
     fn stress_test_never_fails(){
-        let p = bootstrap::param::ratio_events_equal_pval_n(
+        let p = bootstrap::param::ratio_events_greater_pval_n(
             150,150,
             100,
             10,10,
@@ -505,14 +521,14 @@ use claim::{assert_lt,assert_gt};
 
     #[test]
     fn test_n_does_change_likelihood(){
-        let p_small = bootstrap::param::ratio_events_equal_pval_n(
+        let p_small = bootstrap::param::ratio_events_greater_pval_n(
             10,10,
             10,
             10,1,
             1,
             5000
         ) ;  
-        let p_large = bootstrap::param::ratio_events_equal_pval_n(
+        let p_large = bootstrap::param::ratio_events_greater_pval_n(
             10,10,
             10,
             1000,100,
@@ -524,14 +540,14 @@ use claim::{assert_lt,assert_gt};
         assert_gt!(p_small.unwrap(),0.30);
         assert_lt!(p_large.unwrap(),0.05); 
 
-        let p_small = bootstrap::param::ratio_events_equal_pval_n(
+        let p_small = bootstrap::param::ratio_events_greater_pval_n(
             10,10,
             10,
             10,1,
             1,
             5000
         ) ;  
-        let p_large = bootstrap::param::ratio_events_equal_pval_n(
+        let p_large = bootstrap::param::ratio_events_greater_pval_n(
             1000,1000,
             1000,
             10,1,
@@ -558,5 +574,17 @@ use claim::{assert_lt,assert_gt};
                         .sum();
 
         assert_eq!(p, s);
+    }
+
+    #[test]
+    fn jp_caldwell_conversion_data(){
+        //57 matches, 50 kills, 27 deaths without (baseline)
+        //10 matches, 4 kills, 9 deaths with (treatment)
+        let p_cc= bootstrap::param::ratio_events_greater_pval(
+            50,27, 47,
+            4,9, 10,
+        ) ;  
+        eprintln!("{}",p_cc.unwrap());
+        assert!(false);
     }
 }
