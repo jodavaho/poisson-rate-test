@@ -1,6 +1,9 @@
 # poisson-rate-test
 Rust repo that provides a robust poisson-rate hypothesis test, returning p -values for the probability that two observed poisson data sets are different.
-The intended use of this single-function library is to test whether two events are occuring at the same rate.
+
+The intended use of this small library is to test whether two events are occuring at the same rate.
+
+Another test statistic of interst in games is the ratio of events (such as Kills / Deaths). For this, I provide a bootstrap method to estimate p-values in an A/B test of the ratio of two events.
 
 I use it in [kda-tools](https://github.com/jodavaho/kda-tools) for hypothesis testing loadouts in video games.
 
@@ -48,4 +51,53 @@ let t2sum1 = trial2_one.iter().sum::<usize>() as f64;
 let t2sum2 = trial2_two.iter().sum::<usize>() as f64;
 p_double = two_tailed_rates_equal(t2sum2, t2n2, t2sum1, t2n1);
 assert_lt!(p_double,0.05);//<--That did the trick
+```
+
+# Comparing ratio of events
+
+Suppose there's two events, a and b. And we have two groups (base and
+treatment). We changed something in treatment, and want to know if that change
+affected the ratio of a/b. So, we count up a and b for both baseline and
+treatment.  note the p -vals are estimated from simulation, so they might
+change a little (as in 0.01 or so) between different runs. Pass in a higher
+sample count to stabilize, at the expense of cpu cost.
+
+```rust
+fn test_two_diff_bootstrap_parametric(){
+        let base_a = vec![0,0,1,0];
+        let base_b = vec![1,0,1,1];
+        let treat_a = vec![1,1,1,2];
+        let treat_b = vec![1,1,1,1];
+        //Did treatment increase ratio of a/b?
+        let p = bootstrap::param::ratio_events_equal_pval_n(
+            base_a.iter().sum::<usize>(),
+            base_b.iter().sum::<usize>(),
+            base_a.len() as usize,
+            treat_a.iter().sum::<usize>(),
+            treat_b.iter().sum::<usize>(),
+            treat_a.len() as usize,
+            10000
+        );
+        assert_lt!(p.unwrap(),0.15); //<--tentatively yes
+        assert_gt!(p.unwrap(),0.05);
+
+        //just need more data, right?
+        let base_a = vec![0,0,1,0, 1,0,0,0];
+        let base_b = vec![1,0,1,1, 0,1,1,1];
+        let treat_a = vec![1,1,1,2, 1,2,1,1];
+        let treat_b = vec![1,1,1,1, 1,1,1,1];
+        //Did treatment increase ratio of a/b?
+        let p = bootstrap::param::ratio_events_equal_pval_n(
+            base_a.iter().sum::<usize>(),
+            base_b.iter().sum::<usize>(),
+            base_a.len() as usize,
+            treat_a.iter().sum::<usize>(),
+            treat_b.iter().sum::<usize>(),
+            treat_a.len() as usize,
+            10000
+        );
+        assert_lt!(p.unwrap(),0.05); //<--confidently yes 
+        assert_gt!(p.unwrap(),0.01);
+
+    }
 ```
