@@ -13,6 +13,7 @@ pub mod bootstrap{
 
         use rand_distr::Poisson as rand_Poisson;
         use rand_distr::Distribution;
+        use rayon::prelude::{ IntoParallelIterator, ParallelIterator};
 
         /// Compare R1/R2 under condition 1 vs R1/R2 without constraint, and
         /// return the confidence interval
@@ -89,7 +90,6 @@ pub mod bootstrap{
             if num_events_two_baseline == 0 {
                 return Err("Event two does not occur in baseline, assumption of poisson distribution is violated");
             }
-            //TODO: Make parallel with iter_tools & Rayon
             let t_stat:f64 = num_events_one_treatment as f64 /num_events_two_treatment as f64  - num_events_one_baseline as f64 /num_events_two_baseline as f64 ;
             //we're going to try to handle infinities ... 
             //generate baseline distribution of size num_baseline_group + num_treatment_group
@@ -99,18 +99,20 @@ pub mod bootstrap{
             let rate_two_baseline:f64 = num_events_two_baseline  as f64/ num_baseline_group as f64;
             let p_one = rand_Poisson::new(rate_one_baseline).unwrap();
             let p_two = rand_Poisson::new(rate_two_baseline).unwrap();
-
-            let mut p_val = 0.0;
-            for _ in 0..num_samples{
+            let p_val = (0..num_samples).into_par_iter().map(|_| 
+                {
                 let occ_b_one:f64 = p_one.sample_iter(&mut rand::thread_rng()).take(num_baseline_group).sum();
                 let occ_b_two:f64 = p_two.sample_iter(&mut rand::thread_rng()).take(num_baseline_group).sum();
                 let occ_t_one:f64 = p_one.sample_iter(&mut rand::thread_rng()).take(num_treatment_group).sum();
                 let occ_t_two:f64 = p_two.sample_iter(&mut rand::thread_rng()).take(num_treatment_group).sum();
                 let ti = occ_t_one / occ_t_two - occ_b_one/occ_b_two;
-                if ti>t_stat{
-                    p_val += 1.0/num_samples as f64;
-                }
+                if occ_t_two == 0.0 {
+                    return 1.0/(num_samples as f64)
+                } else if ti>t_stat{
+                    return 1.0/(num_samples as f64)
+                } 0.0
             }
+            ).sum();
             Ok(p_val)
         }
     }
@@ -324,13 +326,14 @@ use claim::{assert_lt,assert_gt};
         let treat_a = vec![1,1,1,2];
         let treat_b = vec![1,1,1,1];
         //Did treatment increase ratio of a/b?
-        let p = bootstrap::param::ratio_events_equal_pval(
+        let p = bootstrap::param::ratio_events_equal_pval_n(
             base_a.iter().sum::<usize>(),
             base_b.iter().sum::<usize>(),
             base_a.len() as usize,
             treat_a.iter().sum::<usize>(),
             treat_b.iter().sum::<usize>(),
             treat_a.len() as usize,
+            10000
         );
         assert_lt!(p.unwrap(),0.15); //<--tentatively yes
         assert_gt!(p.unwrap(),0.05);
@@ -340,15 +343,16 @@ use claim::{assert_lt,assert_gt};
         let treat_a = vec![1,1,1,2, 1,2,1,1];
         let treat_b = vec![1,1,1,1, 1,1,1,1];
         //Did treatment increase ratio of a/b?
-        let p = bootstrap::param::ratio_events_equal_pval(
+        let p = bootstrap::param::ratio_events_equal_pval_n(
             base_a.iter().sum::<usize>(),
             base_b.iter().sum::<usize>(),
             base_a.len() as usize,
             treat_a.iter().sum::<usize>(),
             treat_b.iter().sum::<usize>(),
             treat_a.len() as usize,
+            10000
         );
-        assert_lt!(p.unwrap(),0.05); //<--confidently yes
+        assert_lt!(p.unwrap(),0.051); //<--confidently yes
         assert_gt!(p.unwrap(),0.01);
 
     }
@@ -455,7 +459,7 @@ use claim::{assert_lt,assert_gt};
         let t2sum1 = trial2_one.iter().sum::<usize>() as f64;
         let t2sum2 = trial2_two.iter().sum::<usize>() as f64;
         p_double = two_tailed_rates_equal(t2sum2, t2n2, t2sum1, t2n1);
-        assert_lt!(p_double,0.05);//<--That did the truck
+        assert_lt!(p_double,0.05);//<--That did the trick
 
     }
 
@@ -464,5 +468,95 @@ use claim::{assert_lt,assert_gt};
         let p = one_tailed_ratio(1.0,1.0,1.0,1.0,1.0);
         //one sided test!
         assert_eq!(p,0.5);
+    }
+
+    #[test]
+    fn test_p_indep_of_magnitude(){
+        use statrs::assert_almost_eq;
+        let p_one = bootstrap::param::ratio_events_equal_pval_n(
+            200,200,
+            100,
+            10,1,
+            1,
+            5000
+        );  
+        let p_ten = bootstrap::param::ratio_events_equal_pval_n(
+            200,200,
+            100,
+            10000,1000,
+            1,
+            5000
+        );  
+        assert_almost_eq!(p_one.unwrap() , p_ten.unwrap(),  0.01 );
+    }
+
+    #[test]
+    fn stress_test_never_fails(){
+        let p = bootstrap::param::ratio_events_equal_pval_n(
+            150,150,
+            100,
+            10,10,
+            1,
+            50000
+        ) ;  
+        //useless test
+        assert_gt!(p.unwrap(),0.0);
+    }
+
+    #[test]
+    fn test_n_does_change_likelihood(){
+        let p_small = bootstrap::param::ratio_events_equal_pval_n(
+            10,10,
+            10,
+            10,1,
+            1,
+            5000
+        ) ;  
+        let p_large = bootstrap::param::ratio_events_equal_pval_n(
+            10,10,
+            10,
+            1000,100,
+            100,
+            5000
+        ) ;  
+        //small n is just more likely to produce outliers. The p-value will be
+        //larger despite a standout performance vs one that is repeated a lot
+        assert_gt!(p_small.unwrap(),0.30);
+        assert_lt!(p_large.unwrap(),0.05); 
+
+        let p_small = bootstrap::param::ratio_events_equal_pval_n(
+            10,10,
+            10,
+            10,1,
+            1,
+            5000
+        ) ;  
+        let p_large = bootstrap::param::ratio_events_equal_pval_n(
+            1000,1000,
+            1000,
+            10,1,
+            1,
+            5000
+        ) ;  
+        // However, the baseline doesn't matter as much. Outliers unsupported by
+        // evidence are easy to reject
+        assert_gt!(p_small.unwrap(),0.30);
+        assert_gt!(p_large.unwrap(),0.30);
+    }
+    #[test]
+    fn test_rayon_example(){
+        use rayon::prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
+        let p = (0..25usize).into_par_iter()
+                        .zip(0..25usize)
+                        .filter(|&(x, y)| x % 5 == 0 || y % 5 == 0)
+                        .map(|(x, y)| x * y)
+                        .sum::<usize>();
+
+        let s = (0..25usize).zip(0..25)
+                        .filter(|&(x, y)| x % 5 == 0 || y % 5 == 0)
+                        .map(|(x, y)| x * y)
+                        .sum();
+
+        assert_eq!(p, s);
     }
 }
