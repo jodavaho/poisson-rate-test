@@ -327,7 +327,7 @@ use claim::{assert_lt,assert_gt};
         let occurances_observed = vec![0,0,1,0];
         let occurances_other = vec![1,1,5,3,3,8];
         let n1 = occurances_observed.len() as f64;
-        let n2 = occurances_observed.len() as f64;
+        let n2 = occurances_other.len() as f64;
         let sum1 = occurances_observed.iter().sum::<usize>() as f64;
         let sum2 = occurances_other.iter().sum::<usize>() as f64;
         //are these rates the same?
@@ -480,6 +480,40 @@ use claim::{assert_lt,assert_gt};
     }
 
     #[test]
+    fn test_readme_example_first(){
+        //make some data that sure looks like it occurs with rate = 0.5;
+        let data = vec![0,1,1,0]; //note, 0,2,0,0 would be the same (2/4).
+        let n1 = data.len() as f64;
+        let sum1 = data.iter().sum::<usize>() as f64;
+        //are these rates equal to my hypothesized rate of 0.5?
+        let expected_n = n1;
+        let expected_sum = 0.5 * n1;
+        let p = two_tailed_rates_equal(sum1, n1, expected_sum, expected_n);
+        assert!(p>0.99); //<--confidently yes
+    }
+
+    #[test]
+    fn test_readme_example_new_condition(){
+        //say we made a change, and observed the new rates 
+        let occurances_observed = vec![0,0,1,0];
+        //and here's the "usual" data
+        let occurances_usual = vec![1,1,5,3,3,8];
+        //need the basic n/sum statistics
+        let n1 = occurances_observed.len() as f64;
+        let n2 = occurances_usual.len() as f64;
+        let sum1 = occurances_observed.iter().sum::<usize>() as f64;
+        let sum2 = occurances_usual.iter().sum::<usize>() as f64;
+        //is rate of observed > rate usual?
+        let p = one_tailed_ratio(sum1, n1, sum2, n2, 1.0);
+        assert_lt!(p,0.01); //<--confidently no
+
+        //Maybe just check both tails to be sure (this tests r observed / r baseline != 1)
+        let p = two_tailed_rates_equal(sum1, n1, sum2, n2);
+        assert_lt!(p,0.01); //<--confidently no
+    }
+
+
+    #[test]
     fn test_ones_side_compare(){
         let p = one_tailed_ratio(1.0,1.0,1.0,1.0,1.0);
         //one sided test!
@@ -578,13 +612,25 @@ use claim::{assert_lt,assert_gt};
 
     #[test]
     fn jp_caldwell_conversion_data(){
-        //57 matches, 50 kills, 27 deaths without (baseline)
-        //10 matches, 4 kills, 9 deaths with (treatment)
-        let p_cc= bootstrap::param::ratio_events_greater_pval(
-            50,27, 47,
-            4,9, 10,
-        ) ;  
-        eprintln!("{}",p_cc.unwrap());
-        assert!(false);
+        use claim::{assert_lt,assert_gt};
+        //57 matches, 50 kills, 27 deaths without Caldwell Conversion pistol (baseline)
+        let normal_matches = 57;
+        let normal_kills = 50;
+        let normal_deaths = 27;
+        //10 matches, 4 kills, 9 deaths with Caldell Conversion pistol (treatment)
+        let cc_matches=10;
+        let cc_kills=4;
+        let cc_deaths=9;
+
+        let p_cc_treatment_greater= bootstrap::param::ratio_events_greater_pval(
+            normal_kills,normal_deaths, normal_matches,
+            cc_kills,cc_deaths, cc_matches,
+        ).unwrap() ;
+        assert_gt!(p_cc_treatment_greater,0.90); //Hell no that's not greater (cc_kills/cc_deaths) is much less than normal_kills/normal_deaths
+        let p_cc_treatment_less = bootstrap::param::ratio_events_greater_pval(
+            cc_kills,cc_deaths, cc_matches,
+            normal_kills,normal_deaths, normal_matches,
+        ).unwrap() ;  
+        assert_lt!(p_cc_treatment_less,0.05); //very high significance / very low p-valu
     }
 }
